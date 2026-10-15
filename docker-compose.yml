@@ -1,0 +1,83 @@
+name: do-it-auth
+
+x-app: &app
+  image: do-it-auth:local
+  build:
+    context: .
+    target: runtime
+  environment: &environment
+    ConnectionStrings__Postgres: Host=postgres;Database=auth;Username=auth;Password=local-demo-password
+    ConnectionStrings__Redis: redis:6379,abortConnect=false
+    SecretsDirectory: /secrets
+  volumes:
+    - secrets:/secrets:ro
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: local-demo-password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U auth -d auth']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4.5-alpine
+    command: [redis-server, --save, '', --appendonly, 'no']
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  init:
+    <<: *app
+    user: root
+    entrypoint: [/bin/sh, -c]
+    command:
+      - dotnet AuthService.dll --init-secrets && chown -R app:app /secrets && chmod 700 /secrets && chmod 600 /secrets/*
+    volumes:
+      - secrets:/secrets
+
+  migrate:
+    <<: *app
+    command: [--migrate]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+  api:
+    <<: *app
+    ports:
+      - '127.0.0.1:8080:8080'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      target: test
+    environment:
+      TEST_POSTGRES: Host=postgres;Database=auth;Username=auth;Password=local-demo-password
+      TEST_REDIS: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  secrets:
