@@ -1,0 +1,7 @@
+.git
+**/bin
+**/obj
+tmp
+secrets
+.env
+.vs

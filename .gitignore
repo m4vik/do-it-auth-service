@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/TestResults/
+**/coverage/
+.vs/
+.env
+secrets/
+tmp/
+*.user
+*.log
