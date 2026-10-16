@@ -114,4 +114,3 @@ namespace AuthService.Infrastructure.Migrations
         }
     }
 }
-
