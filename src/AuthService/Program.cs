@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -104,8 +103,7 @@ app.Use(async (context, next) =>
         context.Response.StatusCode = error.Status;
         await context.Response.WriteAsJsonAsync(new { error = new { code = error.Code, message = error.Message } });
     }
-    catch (Exception error) when (error is RedisException or NpgsqlException
-        || error is DbUpdateException { InnerException: NpgsqlException })
+    catch (Exception error) when (StorageErrors.IsUnavailable(error))
     {
         context.Response.StatusCode = 503;
         await context.Response.WriteAsJsonAsync(new { error = new { code = "storage_unavailable", message = "Required storage is temporarily unavailable." } });

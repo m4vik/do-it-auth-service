@@ -6,6 +6,8 @@ using AuthService.Features;
 using AuthService.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.Hosting;
 
 namespace AuthService.Tests;
 
@@ -240,6 +242,26 @@ public sealed class ApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
             Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/auth/login",
                 credentials with { Password = "wrong-password" })).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await client.PostAsJsonAsync("/auth/login", credentials)).StatusCode);
+    }
+
+    [Fact]
+    public async Task DatabaseConnectionFailureReturnsServiceUnavailable()
+    {
+        using var client = fixture.CreateClient();
+        var (_, _, pair) = await RegisterAndLogin(client);
+        using var offline = fixture.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<DbContextOptions<AuthDbContext>>();
+            services.AddSingleton(new DbContextOptionsBuilder<AuthDbContext>()
+                .UseNpgsql("Host=127.0.0.1;Port=1;Database=offline;Username=offline;Password=offline;Timeout=1")
+                .Options);
+        }));
+        using var offlineClient = offline.CreateClient();
+        Authorize(offlineClient, pair);
+        var response = await offlineClient.GetAsync("/users/me");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("storage_unavailable", body.GetProperty("error").GetProperty("code").GetString());
     }
 
     private async Task<(Credentials, UserProfile, TokenPair)> RegisterAndLogin(HttpClient client, string type = "email")
