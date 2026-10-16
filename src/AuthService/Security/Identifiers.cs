@@ -11,7 +11,7 @@ public static class Identifiers
         type = type.Trim().ToLowerInvariant();
         value = value.Trim();
         if (type == "email" && MailAddress.TryCreate(value, out var address)
-            && address.Address == value && value.Length <= 254 && value.Contains('.'))
+            && address.Address == value && value.Length <= 254 && address.Host.Contains('.'))
             return (type, value.ToLowerInvariant());
 
         if (type == "phone" && value.StartsWith('+'))

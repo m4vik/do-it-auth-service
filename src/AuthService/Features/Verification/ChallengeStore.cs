@@ -22,7 +22,7 @@ public sealed class ChallengeStore(IConnectionMultiplexer redis, IOptions<AuthOp
             if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
             return n
             """;
-        var count = (long)await db.ScriptEvaluateAsync(script, ["limit:" + key], [seconds]);
+        var count = (long)await db.ScriptEvaluateAsync(script, [Key("limit:" + key)], [seconds]);
         if (count > limit) throw ApiException.Limited();
     }
 
@@ -42,7 +42,7 @@ public sealed class ChallengeStore(IConnectionMultiplexer redis, IOptions<AuthOp
             return 1
             """;
         var issued = (long)await db.ScriptEvaluateAsync(script,
-            [$"cooldown:{user.Id}:{purpose}", $"current:{user.Id}:{purpose}", $"challenge:{id}"],
+            [Key($"cooldown:{user.Id}:{purpose}"), Key($"current:{user.Id}:{purpose}"), Key($"challenge:{id}")],
             [settings.SendCooldownSeconds, seconds, data, Hash(id, code)]);
         if (issued == 0) throw ApiException.Limited();
         await sender.Send(user.IdentifierType, user.Identifier, purpose, id, code);
@@ -51,7 +51,7 @@ public sealed class ChallengeStore(IConnectionMultiplexer redis, IOptions<AuthOp
 
     public async Task<Challenge> Peek(Guid id, string purpose, Guid? userId = null)
     {
-        var raw = await db.HashGetAsync($"challenge:{id}", "data");
+        var raw = await db.HashGetAsync(Key($"challenge:{id}"), "data");
         if (raw.IsNullOrEmpty) throw ApiException.InvalidCode();
         var value = JsonSerializer.Deserialize<Challenge>((string)raw!)!;
         if (value.Purpose != purpose || (userId.HasValue && value.UserId != userId)) throw ApiException.InvalidCode();
@@ -70,7 +70,7 @@ public sealed class ChallengeStore(IConnectionMultiplexer redis, IOptions<AuthOp
             if tries >= tonumber(ARGV[3]) then redis.call('DEL', KEYS[1]) end
             return 0
             """;
-        var result = (long)await db.ScriptEvaluateAsync(script, [$"challenge:{id}"],
+        var result = (long)await db.ScriptEvaluateAsync(script, [Key($"challenge:{id}")],
             [JsonSerializer.Serialize(expected), Hash(id, code), settings.CodeAttempts]);
         if (result != 1) throw ApiException.InvalidCode();
     }
@@ -78,4 +78,5 @@ public sealed class ChallengeStore(IConnectionMultiplexer redis, IOptions<AuthOp
     public string RateKey(string value) => Convert.ToHexString(
         HMACSHA256.HashData(Encoding.UTF8.GetBytes(settings.CodeKey), Encoding.UTF8.GetBytes(value)));
     private string Hash(Guid id, string code) => RateKey($"{id}:{code}");
+    private string Key(string key) => settings.RedisKeyPrefix + key;
 }

@@ -10,7 +10,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
     protected override void OnModelCreating(ModelBuilder model)
     {
         var user = model.Entity<User>();
-        user.ToTable("users");
+        user.ToTable("users", table => table.HasCheckConstraint("CK_users_type", "\"IdentifierType\" IN ('email', 'phone')"));
         user.HasKey(x => x.Id);
         user.Property(x => x.IdentifierType).HasMaxLength(10);
         user.Property(x => x.Identifier).HasMaxLength(254);

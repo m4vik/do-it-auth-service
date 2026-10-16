@@ -142,9 +142,9 @@ public sealed class ApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
         for (var i = 0; i < 5; i++)
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/users/me/contact-verification/confirm", wrong)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/users/me/contact-verification/confirm", correct)).StatusCode);
-        await fixture.Redis.GetDatabase().KeyDeleteAsync($"cooldown:{user.Id}:contact");
+        await fixture.Redis.GetDatabase().KeyDeleteAsync(fixture.Key($"cooldown:{user.Id}:contact"));
         challenge = await RequestCode(client, "/users/me/contact-verification/request", new { });
-        await fixture.Redis.GetDatabase().KeyExpireAsync($"challenge:{challenge.ChallengeId}", TimeSpan.Zero);
+        await fixture.Redis.GetDatabase().KeyExpireAsync(fixture.Key($"challenge:{challenge.ChallengeId}"), TimeSpan.Zero);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/users/me/contact-verification/confirm", Code(challenge))).StatusCode);
     }
 
@@ -161,7 +161,7 @@ public sealed class ApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
         var (_, _, otherPair) = await RegisterAndLogin(other);
         Authorize(other, otherPair);
         Assert.Equal(HttpStatusCode.BadRequest, (await other.PostAsJsonAsync("/users/me/contact-verification/confirm", Code(challenge))).StatusCode);
-        await fixture.Redis.GetDatabase().KeyDeleteAsync($"cooldown:{user.Id}:contact");
+        await fixture.Redis.GetDatabase().KeyDeleteAsync(fixture.Key($"cooldown:{user.Id}:contact"));
         var replacement = await RequestCode(client, "/users/me/contact-verification/request", new { });
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/users/me/contact-verification/confirm", Code(challenge))).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/users/me/contact-verification/confirm", Code(replacement))).StatusCode);
@@ -195,6 +195,51 @@ public sealed class ApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
         Authorize(client, pair);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/users/me")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/auth/refresh", new RefreshRequest(pair.RefreshToken))).StatusCode);
+    }
+
+    [Fact]
+    public async Task DisablingTwoFactorInvalidatesPendingLoginChallenge()
+    {
+        using var client = fixture.CreateClient();
+        var (credentials, profile, pair) = await RegisterAndLogin(client);
+        Authorize(client, pair);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/users/me/2fa/request",
+            new FactorRequest("enable", "wrong-password"))).StatusCode);
+        var setup = await RequestCode(client, "/users/me/2fa/request", new FactorRequest("enable", Password));
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/users/me/2fa/enable", Code(setup))).StatusCode);
+        var login = await (await client.PostAsJsonAsync("/auth/login", credentials)).Content.ReadFromJsonAsync<ChallengeResponse>();
+        var verified = await client.PostAsJsonAsync("/auth/2fa/verify", Code(login!));
+        Authorize(client, (await verified.Content.ReadFromJsonAsync<TokenPair>())!);
+        await fixture.Redis.GetDatabase().KeyDeleteAsync(fixture.Key($"cooldown:{profile.Id}:login"));
+        var pending = await (await client.PostAsJsonAsync("/auth/login", credentials)).Content.ReadFromJsonAsync<ChallengeResponse>();
+        var disable = await RequestCode(client, "/users/me/2fa/request", new FactorRequest("disable", Password));
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/users/me/2fa/disable", Code(disable))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/auth/2fa/verify", Code(pending!))).StatusCode);
+    }
+
+    [Fact]
+    public async Task ConcurrentContactConfirmationHasOneWinner()
+    {
+        using var client = fixture.CreateClient();
+        var (_, _, pair) = await RegisterAndLogin(client);
+        Authorize(client, pair);
+        var challenge = await RequestCode(client, "/users/me/contact-verification/request", new { });
+        var results = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ =>
+            client.PostAsJsonAsync("/users/me/contact-verification/confirm", Code(challenge))));
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Single(results, r => r.StatusCode == HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task LoginAttemptsAreLimited()
+    {
+        using var client = fixture.CreateClient();
+        var credentials = NewCredentials("email");
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/auth/register", credentials)).StatusCode);
+        for (var i = 0; i < 10; i++)
+            Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/auth/login",
+                credentials with { Password = "wrong-password" })).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await client.PostAsJsonAsync("/auth/login", credentials)).StatusCode);
     }
 
     private async Task<(Credentials, UserProfile, TokenPair)> RegisterAndLogin(HttpClient client, string type = "email")

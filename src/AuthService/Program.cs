@@ -63,7 +63,7 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
             OnTokenValidated = async context =>
             {
                 var principal = context.Principal!;
-                if (principal.FindFirstValue("token_use") != "access"
+                if (!Tokens.HasRequiredClaims(principal, "access")
                     || !Guid.TryParse(principal.FindFirstValue("sub"), out var userId)
                     || !Guid.TryParse(principal.FindFirstValue("sid"), out var sessionId))
                 {
@@ -97,13 +97,15 @@ if (args.Contains("--migrate"))
 
 app.Use(async (context, next) =>
 {
+    context.Response.Headers.CacheControl = "no-store";
     try { await next(context); }
     catch (ApiException error)
     {
         context.Response.StatusCode = error.Status;
         await context.Response.WriteAsJsonAsync(new { error = new { code = error.Code, message = error.Message } });
     }
-    catch (Exception error) when (error is RedisException or NpgsqlException)
+    catch (Exception error) when (error is RedisException or NpgsqlException
+        || error is DbUpdateException { InnerException: NpgsqlException })
     {
         context.Response.StatusCode = 503;
         await context.Response.WriteAsJsonAsync(new { error = new { code = "storage_unavailable", message = "Required storage is temporarily unavailable." } });

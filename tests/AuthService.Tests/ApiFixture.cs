@@ -30,6 +30,7 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
     private string adminConnection = "";
     public CapturingSender Sender { get; } = new();
     public IConnectionMultiplexer Redis => Services.GetRequiredService<IConnectionMultiplexer>();
+    public string Key(string key) => database + ":" + key;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -41,7 +42,9 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
             {
                 ["ConnectionStrings:Postgres"] = connection.ConnectionString,
                 ["ConnectionStrings:Redis"] = Environment.GetEnvironmentVariable("TEST_REDIS") ?? "localhost:6379",
-                ["Auth:SigningKey"] = new string('t', 64), ["Auth:CodeKey"] = new string('c', 64),
+                ["Auth:SigningKey"] = new string('t', 64),
+                ["Auth:CodeKey"] = new string('c', 64),
+                ["Auth:RedisKeyPrefix"] = database + ":",
                 ["Logging:LogLevel:Default"] = "Warning"
             });
         });

@@ -15,12 +15,17 @@ public sealed class Tokens(IOptions<AuthOptions> options, TimeProvider clock)
     private readonly AuthOptions settings = options.Value;
     public TokenValidationParameters Validation(string type) => new()
     {
-        ValidateIssuer = true, ValidIssuer = settings.Issuer,
-        ValidateAudience = true, ValidAudience = settings.Audience,
+        ValidateIssuer = true,
+        ValidIssuer = settings.Issuer,
+        ValidateAudience = true,
+        ValidAudience = settings.Audience,
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey)),
-        ValidateLifetime = true, RequireExpirationTime = true, RequireSignedTokens = true,
-        ClockSkew = TimeSpan.Zero, ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+        ValidateLifetime = true,
+        RequireExpirationTime = true,
+        RequireSignedTokens = true,
+        ClockSkew = TimeSpan.Zero,
+        ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
         ValidTypes = [type]
     };
 
@@ -53,7 +58,7 @@ public sealed class Tokens(IOptions<AuthOptions> options, TimeProvider clock)
         {
             var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }
                 .ValidateToken(token, Validation("refresh"), out _);
-            if (principal.FindFirstValue("token_use") != "refresh") throw ApiException.Unauthorized();
+            if (!HasRequiredClaims(principal, "refresh")) throw ApiException.Unauthorized();
             return (Guid.Parse(principal.FindFirstValue("sub")!), Guid.Parse(principal.FindFirstValue("sid")!));
         }
         catch (Exception e) when (e is SecurityTokenException or ArgumentException or FormatException)
@@ -63,6 +68,13 @@ public sealed class Tokens(IOptions<AuthOptions> options, TimeProvider clock)
     }
 
     public static string Digest(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    public static bool HasRequiredClaims(ClaimsPrincipal principal, string type) =>
+        principal.FindFirstValue("token_use") == type
+        && Guid.TryParse(principal.FindFirstValue("sub"), out _)
+        && Guid.TryParse(principal.FindFirstValue("sid"), out _)
+        && Guid.TryParse(principal.FindFirstValue("jti"), out _)
+        && long.TryParse(principal.FindFirstValue("iat"), out _);
+
     public static bool SameDigest(string left, string right) =>
         CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(left), Encoding.UTF8.GetBytes(right));
 }

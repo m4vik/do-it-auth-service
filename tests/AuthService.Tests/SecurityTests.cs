@@ -36,8 +36,23 @@ public sealed class SecurityTests
         Assert.NotEqual(pair.RefreshToken, tokens.Issue(session).RefreshToken);
     }
 
+    [Fact]
+    public void ExpiredJwtIsRejected()
+    {
+        var clock = new FixedTimeProvider(DateTimeOffset.UtcNow.AddHours(-2));
+        var tokens = new Tokens(Options.Create(new AuthOptions { SigningKey = new string('a', 64) }), clock);
+        var expired = tokens.Issue(new LoginSession { UserId = Guid.NewGuid(), ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1) });
+        Assert.Throws<ApiException>(() => tokens.ReadRefresh(expired.RefreshToken));
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
     private static Tokens MakeTokens(char key) => new(Options.Create(new AuthOptions
     {
-        SigningKey = new string(key, 64), CodeKey = new string('c', 64)
+        SigningKey = new string(key, 64),
+        CodeKey = new string('c', 64)
     }), TimeProvider.System);
 }
