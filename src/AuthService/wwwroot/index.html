@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Auth Service — проверка API</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/test-panel.css">
+    <script src="/test-panel.js" defer></script>
+</head>
+<body>
+<main>
+    <header>
+        <div><span class="eyebrow">ЛОКАЛЬНАЯ ПРОВЕРКА API</span><h1>Auth Service<span class="dot">.</span></h1></div>
+        <span id="session-state" class="badge">Вход не выполнен</span>
+    </header>
+    <p class="intro">Пройди шаги по порядку. Запросы отправляются в настоящий API, ответы отображаются справа.</p>
+    <div id="notice" class="notice" role="status" aria-live="polite">Начни с регистрации нового email или телефона.</div>
+
+    <div class="layout">
+        <div class="steps">
+            <section class="card" aria-labelledby="account-heading">
+                <h2 id="account-heading"><span class="number">01</span> Аккаунт</h2>
+                <div class="fields">
+                    <label>Идентификатор<select id="identifier-type"><option value="email">Email</option><option value="phone">Телефон</option></select></label>
+                    <label class="grow">Контакт<input id="identifier" type="email" required maxlength="254" autocomplete="username"></label>
+                </div>
+                <label>Пароль<input id="password" type="password" value="Test-password-123!" minlength="8" maxlength="128" required autocomplete="current-password"></label>
+                <p class="hint">Для первого теста контакт заполнен примером. Пароль: <code>Test-password-123!</code></p>
+                <div class="actions">
+                    <button data-action="register" class="primary">Зарегистрироваться</button>
+                    <button data-action="login">Войти</button>
+                    <button data-action="profile" data-auth>Профиль</button>
+                </div>
+                <div id="login-factor" class="subsection" hidden>
+                    <h3>Подтверди второй фактор</h3>
+                    <p class="hint">Найди в логах Docker код с <code>purpose=login</code> и введи его здесь.</p>
+                    <div class="code-row">
+                        <label class="grow">Код входа<input id="login-code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" aria-label="Код входа"></label>
+                        <button data-action="verify-login" class="primary">Подтвердить вход</button>
+                    </div>
+                </div>
+                <div id="profile" class="profile" hidden>
+                    <strong id="profile-contact"></strong>
+                    <div class="profile-flags"><span id="profile-verified"></span><span id="profile-factor"></span></div>
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="contact-heading">
+                <h2 id="contact-heading"><span class="number">02</span> Подтверждение контакта</h2>
+                <p class="hint">Вход уже доступен. Этот шаг меняет флаг подтверждения в профиле.</p>
+                <button data-action="request-contact" data-auth>Отправить код подтверждения</button>
+                <div class="code-row">
+                    <label class="grow">Код из логов <code>purpose=contact</code><input id="contact-code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000"></label>
+                    <button data-action="confirm-contact">Подтвердить контакт</button>
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="factor-heading">
+                <h2 id="factor-heading"><span class="number">03</span> Двухфакторная аутентификация</h2>
+                <p class="hint">Используется пароль из первого блока. После изменения 2FA все сессии отзываются — потребуется войти заново.</p>
+                <div class="code-row">
+                    <label class="grow">Действие<select id="factor-action"><option value="enable">Включить 2FA</option><option value="disable">Выключить 2FA</option></select></label>
+                    <button data-action="request-factor" data-auth>Получить код</button>
+                </div>
+                <div class="code-row">
+                    <label class="grow">Код <span id="factor-purpose">purpose=enable</span><input id="factor-code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000"></label>
+                    <button data-action="confirm-factor">Подтвердить изменение</button>
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="session-heading">
+                <h2 id="session-heading"><span class="number">04</span> Токены и выход</h2>
+                <p class="hint">Обновление выдаёт новую пару токенов. Выход отзывает текущую сессию.</p>
+                <div class="actions"><button data-action="refresh">Обновить токены</button><button data-action="logout" data-auth>Выйти</button></div>
+                <p id="token-info" class="hint">Токены пока не получены.</p>
+            </section>
+        </div>
+
+        <aside class="inspector" aria-label="Ответ API и инструкция">
+            <section class="card response-card">
+                <div class="response-heading"><h2>Ответ API</h2><span id="http-status" class="badge">—</span></div>
+                <p id="request-path" class="request-path">Запросы ещё не отправлялись</p>
+                <pre id="response" tabindex="0" aria-label="Тело ответа API">Здесь появится JSON-ответ сервера.</pre>
+                <label class="checkbox"><input type="checkbox" id="show-tokens">Показывать токены в ответе</label>
+            </section>
+            <section class="card help">
+                <h3>Где взять код?</h3>
+                <p>Отправка email и SMS работает заглушкой. Открой окно с Docker или выполни в папке проекта:</p>
+                <code class="command">docker compose logs -f api</code>
+                <p>Найди строку с нужным <code>purpose</code> и <code>challenge</code> из ответа. Скопируй шесть цифр после <code>code=</code>.</p>
+                <p>Повторная отправка доступна через 60 секунд. Для нового теста измени контакт. После обновления страницы нужно войти снова: токены хранятся только в памяти вкладки.</p>
+            </section>
+        </aside>
+    </div>
+    <footer>Тестовая панель · Все операции выполняются через REST API · Email / SMS — заглушки</footer>
+</main>
+</body>
+</html>

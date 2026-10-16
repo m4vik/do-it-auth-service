@@ -115,6 +115,8 @@ app.Use(async (context, next) =>
         await context.Response.WriteAsJsonAsync(new { error = new { code = "internal_error", message = "An unexpected error occurred." } });
     }
 });
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
