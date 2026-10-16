@@ -301,3 +301,9 @@ dotnet ef migrations has-pending-model-changes --project src/AuthService
 Проверь сгенерированную миграцию перед применением. Для приложения её выполнит
 `migrate` при следующем `docker compose up --build`. Не редактируй уже применённую
 миграцию ради нового изменения; создай следующую и проверь её на тестовой БД.
+
+## Проверенная версия
+
+Готовая версия отмечена Git-тегом `v1.0.0`.
+Результаты сборки, тестов и проверки Docker описаны в [VALIDATION.md](VALIDATION.md).
+Согласованные этапы и критерии готовности — в [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
